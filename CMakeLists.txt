@@ -8,6 +8,14 @@ message(STATUS "Using cmake ${CMAKE_VERSION}")
 # Modules
 include(CheckIncludeFiles)
 
+# Install dirs
+if(NOT DEFINED CMAKE_INSTALL_DATADIR)
+  set(CMAKE_INSTALL_DATADIR "share")
+endif()
+if(NOT DEFINED CMAKE_INSTALL_MANDIR)
+  set(CMAKE_INSTALL_MANDIR "${CMAKE_INSTALL_DATADIR}/man")
+endif()
+
 # Ccache
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
@@ -480,35 +488,52 @@ if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
 endif()
 
 # Manual
-install(FILES src/nmail.1 DESTINATION share/man/man1)
+install(FILES src/nmail.1 DESTINATION "${CMAKE_INSTALL_MANDIR}/man1")
 
 # Third-party license attribution
 #
-# Static binary distributions (HAS_STATIC_EXTLIBS, the tarballs produced by
-# utils/dist/build-*.sh) embed third-party libraries and vendored ext/ sources
-# directly into the nmail binary. Install their combined license notices next
-# to nmail's own LICENSE under share/doc/nmail so the distributed binary carries
-# the required attribution; package.sh also surfaces both files at the tarball
-# top level. A regular, dynamically linked from-source build redistributes none
-# of these -- the ext/ sources keep their own licenses in the source tree -- and
-# installs neither file. THIRD_PARTY_LICENSES.static is hand-maintained; keep it
-# in sync with the versions pinned in utils/dist/Dockerfile.* and
+# Every nmail binary links Xapian -- making it a combined work under the GNU
+# GPL v2 -- and compiles in the third-party sources vendored under ext/, so the
+# notices are installed for every build, not just the static tarballs produced
+# by utils/dist/build-*.sh. The combined THIRD_PARTY_LICENSES file is assembled
+# here from fragments: a preamble carrying the combined-work statement and the
+# full GPL v2 text, the always-applicable ext/ notices, and -- for static builds
+# only -- the notices for the system libraries linked into the binary. Both
+# fragments are hand-maintained; keep THIRD_PARTY_LICENSES.static in sync with
+# the versions pinned in utils/dist/Dockerfile.* and
 # utils/dist/build-deps-macos.sh.
+set(TPL_FRAGMENTS
+  "${CMAKE_CURRENT_SOURCE_DIR}/utils/licenses/preamble.txt"
+  "${CMAKE_CURRENT_SOURCE_DIR}/ext/THIRD_PARTY_LICENSES")
 if(HAS_STATIC_EXTLIBS)
-  set(TPL_STATIC "${CMAKE_CURRENT_SOURCE_DIR}/utils/dist/THIRD_PARTY_LICENSES.static")
-  if(NOT EXISTS "${TPL_STATIC}")
-    message(FATAL_ERROR "Missing third-party license file: ${TPL_STATIC}")
-  endif()
-  install(FILES "${TPL_STATIC}" DESTINATION share/doc/nmail
-          RENAME THIRD_PARTY_LICENSES)
-  install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" DESTINATION share/doc/nmail)
+  list(APPEND TPL_FRAGMENTS
+       "${CMAKE_CURRENT_SOURCE_DIR}/utils/dist/THIRD_PARTY_LICENSES.static")
 endif()
+
+set(TPL_COMBINED "${CMAKE_CURRENT_BINARY_DIR}/THIRD_PARTY_LICENSES")
+file(WRITE "${TPL_COMBINED}" "")
+foreach(TPL_FRAGMENT ${TPL_FRAGMENTS})
+  if(NOT EXISTS "${TPL_FRAGMENT}")
+    message(FATAL_ERROR "Missing third-party license fragment: ${TPL_FRAGMENT}")
+  endif()
+  file(READ "${TPL_FRAGMENT}" TPL_FRAGMENT_TEXT)
+  file(APPEND "${TPL_COMBINED}" "${TPL_FRAGMENT_TEXT}")
+  file(APPEND "${TPL_COMBINED}" "\n")
+  # Regenerate the combined file when a fragment changes.
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${TPL_FRAGMENT}")
+endforeach()
+
+# Install the combined notices next to nmail's own LICENSE under the FHS doc
+# dir, so every installed binary carries the required attribution; package.sh
+# also surfaces both files at the tarball top level.
+install(FILES "${TPL_COMBINED}" "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/nmail")
 
 # Uninstall
 add_custom_target(uninstall
   COMMAND "${CMAKE_COMMAND}" -E remove "${CMAKE_INSTALL_PREFIX}/bin/nmail"
-  COMMAND "${CMAKE_COMMAND}" -E remove "${CMAKE_INSTALL_PREFIX}/share/man/man1/nmail.1"
-  COMMAND "${CMAKE_COMMAND}" -E remove "${CMAKE_INSTALL_PREFIX}/share/doc/nmail/THIRD_PARTY_LICENSES"
-  COMMAND "${CMAKE_COMMAND}" -E remove "${CMAKE_INSTALL_PREFIX}/share/doc/nmail/LICENSE"
-  COMMAND "${CMAKE_COMMAND}" -E remove_directory "${CMAKE_INSTALL_PREFIX}/share/doc/nmail"
+  COMMAND "${CMAKE_COMMAND}" -E remove "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_MANDIR}/man1/nmail.1"
+  COMMAND "${CMAKE_COMMAND}" -E remove "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATADIR}/doc/nmail/THIRD_PARTY_LICENSES"
+  COMMAND "${CMAKE_COMMAND}" -E remove "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATADIR}/doc/nmail/LICENSE"
+  COMMAND "${CMAKE_COMMAND}" -E remove_directory "${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_DATADIR}/doc/nmail"
 )

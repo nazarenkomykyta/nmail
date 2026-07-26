@@ -1404,8 +1404,7 @@ following third-party libraries:
 - [utfcpp](https://github.com/nemtrif/utfcpp) -
   Copyright 2006 Nemanja Trifunovic - [Boost License](/ext/utfcpp/LICENSE)
 
-Static binaries are distributed with a combined
-[THIRD_PARTY_LICENSES](/utils/dist/THIRD_PARTY_LICENSES.static) file.
+Binaries are distributed with a combined THIRD_PARTY_LICENSES file.
 
 Code Formatting
 ---------------

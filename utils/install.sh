@@ -325,11 +325,11 @@ main() {
   fi
 
   # Install the license notices under share/doc/nmail, mirroring the CMake
-  # static-build install rule and OS package-manager convention. The static
-  # binary embeds third-party libraries -- including GPLv2 Xapian -- so keeping
-  # their combined attribution beside the installed binary makes the install
-  # self-contained rather than relying on the downloaded tarball, which this
-  # installer discards on exit.
+  # install rule and OS package-manager convention. The binary is a combined
+  # work under the GPLv2 (Xapian) and embeds further third-party libraries, so
+  # keeping their combined attribution beside the installed binary makes the
+  # install self-contained rather than relying on the downloaded tarball, which
+  # this installer discards on exit.
   for f in LICENSE THIRD_PARTY_LICENSES; do
     if [[ -f "${srcdir}/share/doc/nmail/${f}" ]]; then
       info "installing ${f} to ${docdir}"
