@@ -137,6 +137,8 @@ int main(int argc, char* argv[])
     }
   }
 
+  const bool isSetup = !setup.empty();
+
   std::shared_ptr<ScopedDirLock> dirLock;
   if (!readOnly)
   {
@@ -148,20 +150,20 @@ int main(int argc, char* argv[])
     dirLock.reset(new ScopedDirLock(Util::GetApplicationDir()));
     if (!dirLock->IsLocked())
     {
-      const std::string& roArgPath = Util::GetApplicationDir() + std::string("auto-ro.flag");
-      if (!apathy::Path(roArgPath).exists())
-      {
-        std::cerr <<
-          "error: unable to acquire lock for " << Util::GetApplicationDir() << "\n" <<
-          "       run 'nmail -ro' to start a shadow instance with read-only cache access.\n" <<
-          "       or  'touch " << roArgPath << "' to auto-enable it.\n";
-        return 1;
-      }
-
       readOnly = true;
     }
   }
 
+  if (readOnly && (isSetup || changePass))
+  {
+    std::cerr <<
+      "error: setup and password change require exclusive access to config dir\n"
+      "       " << Util::GetApplicationDir() << "\n" <<
+      "       ensure no other nmail instance is running, and -ro is not specified.\n";
+    return 1;
+  }
+
+  // Note: must be set before any Config is constructed, as Config write access depends on it
   Util::SetReadOnly(readOnly);
 
   const std::string& logPath = Util::GetApplicationDir() + std::string("log.txt");
@@ -259,8 +261,7 @@ int main(int argc, char* argv[])
   // Read params needed for setup
   Util::SetBrowserCmd(mainConfig->Get("browser_cmd"));
 
-  const bool isSetup = !setup.empty();
-  if (isSetup && !readOnly)
+  if (isSetup)
   {
     if ((setup != "gmail") && (setup != "gmail-oauth2") && (setup != "icloud") && (setup != "outlook") &&
         (setup != "outlook-oauth2"))

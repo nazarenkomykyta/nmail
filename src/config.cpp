@@ -76,6 +76,8 @@ void Config::Load(const std::string& p_Path)
 
 void Config::Save() const
 {
+  if (Util::GetReadOnly()) return;
+
   Save(m_Path);
 }
 
