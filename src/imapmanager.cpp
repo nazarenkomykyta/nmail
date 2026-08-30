@@ -478,6 +478,11 @@ void ImapManager::ProcessIdleOffline()
   LOG_DEBUG("exiting idle");
 }
 
+std::string ImapManager::GetLastErrorHint()
+{
+  return m_Imap.GetLastErrorHint();
+}
+
 void ImapManager::Process()
 {
   THREAD_REGISTER();
@@ -835,6 +840,15 @@ void ImapManager::CheckConnectivityAndReconnect(bool p_SkipCheck)
         ClearStatus(Status::FlagConnecting);
         LOG_INFO("connected");
         break;
+      }
+
+      // report the reason once per disconnect
+      if ((reconnectAttempt == 1) && m_Running && m_ResponseHandler)
+      {
+        ImapManager::Request request;
+        Response response;
+        response.m_ResponseStatus = ResponseStatusReconnectFailed;
+        m_ResponseHandler(request, response);
       }
 
       int retryDelay = 15;

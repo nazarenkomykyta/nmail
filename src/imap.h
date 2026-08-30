@@ -96,6 +96,8 @@ public:
 
   FolderInfo GetFolderInfo(const std::string& p_Folder);
 
+  std::string GetLastErrorHint();
+
 private:
   bool SelectFolder(const std::string& p_Folder, bool p_Force = false);
   bool SelectedFolderIsEmpty();
@@ -105,6 +107,8 @@ private:
   int ImapConnect(const std::string& p_Address);
   bool LoginRetryAlternateIp(const std::string& p_FailedPeerIp,
                              std::string& p_ServerId, std::string& p_ConnAddrs);
+  std::string GetLoginFailureHint(const std::string& p_FailStep, const std::string& p_PeerIp);
+  void SetLastErrorHint(const std::string& p_Hint);
 
   std::set<std::string>& GetCapabilities();
   bool HasCapability(const std::string& p_Name);
@@ -143,6 +147,9 @@ private:
   // and for detecting the transient failure that triggers alternate-ip retry
   int m_LastAuthRv = 0;
   std::string m_LastAuthResponse;
+
+  std::mutex m_ErrorHintMutex;
+  std::string m_LastErrorHint;
 
   std::string m_LastSearchQueryStr;
   std::string m_LastSearchFolder;

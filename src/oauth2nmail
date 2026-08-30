@@ -9,9 +9,11 @@
 
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse
+import errno
 import http.client
 import json
 import os
+import socket
 import ssl
 import stat
 import sys
@@ -20,7 +22,7 @@ import time
 import urllib.parse
 import webbrowser
 
-version = "1.06"
+version = "1.07"
 pathServed = ""
 providers = {
     "gmail-oauth2": {
@@ -104,9 +106,38 @@ def tls_store_info():
     return (caCount == 0), desc
 
 
+def network_error_hint(url, exc):
+    """Return a hint for failures to reach the host at all, empty str otherwise."""
+    host = urllib.parse.urlparse(url).hostname or url
+
+    # name resolution failed - no dns server reachable, or unknown host
+    if isinstance(exc, socket.gaierror):
+        return "cannot resolve " + host
+
+    # tls errors are reported by the caller, they mean the host was reached
+    if isinstance(exc, ssl.SSLError):
+        return ""
+
+    # connect failed or timed out - no route, host down, or blocked
+    connectErrnos = (errno.ENETDOWN, errno.ENETUNREACH, errno.ENETRESET,
+                     errno.EHOSTDOWN, errno.EHOSTUNREACH, errno.ECONNREFUSED,
+                     errno.ECONNRESET, errno.ECONNABORTED, errno.ETIMEDOUT,
+                     errno.EPIPE)
+    isTimeout = isinstance(exc, (TimeoutError, socket.timeout))
+    if isTimeout or (isinstance(exc, OSError) and (exc.errno in connectErrnos)):
+        return "cannot connect to " + host
+
+    return ""
+
+
 def write_https_error(action, url, exc):
-    """Log an https failure, with extra guidance for ca trust store issues."""
+    """Log an https failure, with extra guidance for common causes."""
     sys.stderr.write(action + " to " + url + " failed: " + str(exc) + "\n")
+
+    netHint = network_error_hint(url, exc)
+    if netHint:
+        write_hint(netHint)
+        return
 
     if not isinstance(exc, ssl.SSLCertVerificationError):
         return

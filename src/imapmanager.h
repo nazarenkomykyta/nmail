@@ -37,6 +37,7 @@ public:
     ResponseStatusGetFlagsFailed = (1 << 3),
     ResponseStatusGetBodysFailed = (1 << 4),
     ResponseStatusLoginFailed = (1 << 5),
+    ResponseStatusReconnectFailed = (1 << 6),
   };
 
   struct Request
@@ -140,6 +141,8 @@ public:
   bool SyncSearch(bool p_IsLocal, const SearchQuery& p_SearchQuery, SearchResult& p_SearchResult);
 
   void SetCurrentFolder(const std::string& p_Folder);
+
+  std::string GetLastErrorHint();
 
 private:
   struct ProgressCount

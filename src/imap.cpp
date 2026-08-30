@@ -233,6 +233,8 @@ bool Imap::Login()
 
   if (connected)
   {
+    SetLastErrorHint(std::string());
+
     // @todo: clear all cache if cannot use existing (cater for password change)
     if (retried)
     {
@@ -248,12 +250,42 @@ bool Imap::Login()
   else
   {
     const int summaryRv = (m_LastAuthRv != 0) ? m_LastAuthRv : failRv;
-    LOG_WARNING("login summary: failed step=%s rv=%d dur=%lld ms server=[%s] conn=[%s] response=\"%s\"",
+    const std::string hint = GetLoginFailureHint(failStep, peerIp);
+    SetLastErrorHint(hint);
+    LOG_WARNING("login summary: failed step=%s rv=%d dur=%lld ms server=[%s] conn=[%s] response=\"%s\" hint=\"%s\"",
                 failStep.c_str(), summaryRv, (long long)(ImapUtil::GetTimeMs() - loginStartMs),
-                serverId.c_str(), connAddrs.c_str(), m_LastAuthResponse.c_str());
+                serverId.c_str(), connAddrs.c_str(), m_LastAuthResponse.c_str(), hint.c_str());
   }
 
   return connected;
+}
+
+std::string Imap::GetLoginFailureHint(const std::string& p_FailStep, const std::string& p_PeerIp)
+{
+  if (p_FailStep == "oauth2") return Auth::GetLastErrorHint();
+
+  if ((p_FailStep != "connect") || !p_PeerIp.empty()) return std::string();
+
+  std::string dnsErr;
+  const std::vector<std::string> ips = ImapUtil::ResolveHostIps(m_Host, dnsErr);
+  if (!dnsErr.empty() || ips.empty())
+  {
+    return "cannot resolve " + m_Host;
+  }
+
+  return "cannot connect to " + m_Host + ":" + std::to_string(m_Port);
+}
+
+std::string Imap::GetLastErrorHint()
+{
+  std::lock_guard<std::mutex> lock(m_ErrorHintMutex);
+  return m_LastErrorHint;
+}
+
+void Imap::SetLastErrorHint(const std::string& p_Hint)
+{
+  std::lock_guard<std::mutex> lock(m_ErrorHintMutex);
+  m_LastErrorHint = p_Hint;
 }
 
 bool Imap::Logout()

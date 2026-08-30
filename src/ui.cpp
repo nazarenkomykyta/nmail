@@ -16,7 +16,6 @@
 #include <unistd.h>
 
 #include "addressbook.h"
-#include "auth.h"
 #include "flag.h"
 #include "loghelp.h"
 #include "maphelp.h"
@@ -599,8 +598,18 @@ void Ui::DrawDefaultDialog()
     std::chrono::duration<double> elapsed = nowTime - m_DialogMessageTime;
     if ((elapsed.count() < 0.5f) && !m_DialogMessage.empty())
     {
-      int x = std::max((m_ScreenWidth - (int)m_DialogMessage.size() - 1) / 2, 0);
-      const std::string& dispStr = m_DialogMessage;
+      std::wstring wmsg = Util::ToWString(m_DialogMessage);
+      const int maxWidth = std::max(m_ScreenWidth - 2, 0);
+      if ((int)wmsg.size() > maxWidth)
+      {
+        static const std::wstring suffix = L"...";
+        wmsg = (maxWidth > (int)suffix.size())
+          ? (wmsg.substr(0, maxWidth - suffix.size()) + suffix)
+          : wmsg.substr(0, maxWidth);
+      }
+
+      const std::string dispStr = Util::ToString(wmsg);
+      int x = std::max((m_ScreenWidth - (int)wmsg.size() - 1) / 2, 0);
       wattron(m_DialogWin, m_AttrsDialog);
       mvwprintw(m_DialogWin, 0, x, " %s ", dispStr.c_str());
       wattroff(m_DialogWin, m_AttrsDialog);
@@ -4263,9 +4272,18 @@ void Ui::ResponseHandler(const ImapManager::Request& p_Request, const ImapManage
     }
     else if (p_Response.m_ResponseStatus & ImapManager::ResponseStatusLoginFailed)
     {
-      const std::string hint = Auth::GetLastErrorHint();
+      const std::string hint = m_ImapManager ? m_ImapManager->GetLastErrorHint()
+                                             : std::string();
       SetDialogMessage("Login failed" + (hint.empty() ? "" : ": " + hint), true /* p_Warn */);
     }
+    else if (p_Response.m_ResponseStatus & ImapManager::ResponseStatusReconnectFailed)
+    {
+      const std::string hint = m_ImapManager ? m_ImapManager->GetLastErrorHint()
+                                             : std::string();
+      SetDialogMessage("Reconnect failed" + (hint.empty() ? "" : ": " + hint), true /* p_Warn */);
+    }
+
+    uiRequest |= UiRequestDrawAll;
   }
 
   if (updateIndexFromUid)
