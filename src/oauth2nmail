@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 import http.client
 import json
 import os
+import ssl
 import stat
 import sys
 import threading
@@ -19,7 +20,7 @@ import time
 import urllib.parse
 import webbrowser
 
-version = "1.04"
+version = "1.06"
 pathServed = ""
 providers = {
     "gmail-oauth2": {
@@ -89,6 +90,51 @@ def show_version():
     print("oauth2nmail is distributed under the MIT license.")
     print("")
     print("Written by Kristofer Berggren.")
+
+
+def tls_store_info():
+    """Report the ca trust store python3 uses; returns (isEmpty, description)."""
+    paths = ssl.get_default_verify_paths()
+    try:
+        caCount = ssl.create_default_context().cert_store_stats()["x509_ca"]
+    except Exception:
+        caCount = 0
+    desc = ("python3=" + sys.executable + " ca_certs=" + str(caCount)
+            + " cafile=" + repr(paths.cafile) + " capath=" + repr(paths.capath))
+    return (caCount == 0), desc
+
+
+def write_https_error(action, url, exc):
+    """Log an https failure, with extra guidance for ca trust store issues."""
+    sys.stderr.write(action + " to " + url + " failed: " + str(exc) + "\n")
+
+    if not isinstance(exc, ssl.SSLCertVerificationError):
+        return
+
+    isEmpty, desc = tls_store_info()
+    sys.stderr.write("tls trust store: " + desc + "\n")
+    if not isEmpty:
+        return
+
+    # no ca certificates at all - typically a python.org macos install whose
+    # post-install "Install Certificates.command" step was never run
+    sys.stderr.write("python3 has no ca certificates installed, cannot verify tls\n")
+    frameworkPrefix = "/Library/Frameworks/Python.framework/Versions/"
+    openSslCaFile = ssl.get_default_verify_paths().openssl_cafile or ""
+    if (sys.platform == "darwin") and openSslCaFile.startswith(frameworkPrefix):
+        pyVer = openSslCaFile[len(frameworkPrefix):].split("/")[0]
+        sys.stderr.write("run: open \"/Applications/Python " + pyVer
+                         + "/Install Certificates.command\"\n")
+    else:
+        sys.stderr.write("install ca certificates, or point SSL_CERT_FILE at a ca bundle\n")
+
+    # single-line summary for nmail to surface in the ui, see Auth::PerformAction
+    write_hint("python3 has no CA certificates, see log.txt")
+
+
+def write_hint(hint):
+    """Emit a concise single-line reason for nmail to show in its ui."""
+    sys.stderr.write("hint: " + hint + "\n")
 
 
 # HttpResponse, get() and post() below constitutes a poor man's 'requests' replacement
@@ -260,8 +306,7 @@ def generate(provider, client_id, client_secret, token_store):
     try:
         convResponse = post(convUrl, data=convParams, headers=convHdr)
     except Exception as e:
-        sys.stderr.write("token request http post to " + convUrl
-                         + " failed: " + str(e) + "\n")
+        write_https_error("token request http post", convUrl, e)
         return 4
 
     if convResponse.status_code != 200:
@@ -299,8 +344,7 @@ def generate(provider, client_id, client_secret, token_store):
         try:
             convResponse = post(convUrl, data=convParams, headers=convHdr)
         except Exception as e:
-            sys.stderr.write("user token request http post to " + convUrl
-                             + " failed: " + str(e) + "\n")
+            write_https_error("user token request http post", convUrl, e)
             return 4
 
         if convResponse.status_code != 200:
@@ -326,8 +370,7 @@ def generate(provider, client_id, client_secret, token_store):
     try:
         infoResponse = get(infoUrl, headers=infoHeaders)
     except Exception as e:
-        sys.stderr.write("info request http get to " + infoUrl
-                         + " failed: " + str(e) + "\n")
+        write_https_error("info request http get", infoUrl, e)
         return 4
 
     if infoResponse.status_code != 200:
@@ -377,26 +420,30 @@ def refresh(provider, client_id, client_secret, token_store):
     try:
         refrResponse = post(refrUrl, data=refrParams, headers=refrHdr)
     except Exception as e:
-        sys.stderr.write("token refresh http post to " + refrUrl
-                         + " failed: " + str(e) + "\n")
+        write_https_error("token refresh http post", refrUrl, e)
         return 4
 
-    # parse response
-    jsonRefrResponse = json.loads(refrResponse.text)
+    # parse response - the body is not guaranteed to be json, an intermediate
+    # proxy or gateway may return html for 5xx, so tolerate a decode failure
+    try:
+        jsonRefrResponse = json.loads(refrResponse.text)
+    except ValueError:
+        jsonRefrResponse = {}
 
-    if (refrResponse.status_code == 400):
-        isInvalidGrant = (jsonRefrResponse["error"] == "invalid_grant")
-        isDescGmailExpired = (jsonRefrResponse["error_description"] == "Token has been expired or revoked.")
-        isDescOutlookExpired = ("The user could not be authenticated as the grant is expired. The user must sign in again." in jsonRefrResponse["error_description"])
-        if isInvalidGrant and (isDescGmailExpired or isDescOutlookExpired):
-            sys.stderr.write("token expired " + repr(refrResponse) + "\n")
-            sys.stderr.write("response: " + refrResponse.text + "\n")
-            sys.stderr.write("attempt to reauthenticate\n")
-            return generate(provider, client_id, client_secret, token_store)
+    # any invalid_grant means the refresh token is no longer usable (expired,
+    # revoked, password changed, consent withdrawn) and only a new interactive
+    # sign-in can recover, so reauthenticate rather than matching the provider's
+    # error_description wording, which varies and is subject to change
+    if (refrResponse.status_code == 400) and (jsonRefrResponse.get("error") == "invalid_grant"):
+        sys.stderr.write("refresh token no longer valid " + repr(refrResponse) + "\n")
+        sys.stderr.write("response: " + refrResponse.text + "\n")
+        sys.stderr.write("attempt to reauthenticate\n")
+        return generate(provider, client_id, client_secret, token_store)
 
     if refrResponse.status_code != 200:
         sys.stderr.write("token refresh failed " + repr(refrResponse) + "\n")
         sys.stderr.write("response: " + refrResponse.text + "\n")
+        write_hint("mail account authentication failed, see log.txt")
         return 5
 
     # save received tokens

@@ -29,6 +29,7 @@ bool Auth::m_OAuthEnabled = false;
 int64_t Auth::m_ExpiryTime = 0;
 std::string Auth::m_CustomClientId;
 std::string Auth::m_CustomClientSecret;
+std::string Auth::m_LastErrorHint;
 
 bool Auth::InitConfig()
 {
@@ -328,6 +329,29 @@ void Auth::LogTokenStoreMetadata()
             tokens.Get("scope").c_str());
 }
 
+// extract the single-line "hint: " reason emitted by oauth2nmail, if any, so the
+// ui can tell the user what went wrong without them having to inspect log.txt
+void Auth::UpdateLastErrorHint(const std::string& p_Output)
+{
+  m_LastErrorHint.clear();
+
+  static const std::string prefix = "hint: ";
+  size_t pos = p_Output.find(prefix);
+  if (pos == std::string::npos) return;
+
+  if ((pos != 0) && (p_Output[pos - 1] != '\n')) return;
+
+  pos += prefix.size();
+  const size_t end = p_Output.find('\n', pos);
+  m_LastErrorHint = p_Output.substr(pos, (end == std::string::npos) ? end : (end - pos));
+}
+
+std::string Auth::GetLastErrorHint()
+{
+  std::lock_guard<std::mutex> lock(m_Mutex);
+  return m_LastErrorHint;
+}
+
 int64_t Auth::GetTimeToExpirySec()
 {
   return (m_ExpiryTime - GetCurrentTimeSec());
@@ -368,6 +392,7 @@ int Auth::PerformAction(const AuthAction p_AuthAction)
   const long long actionDurMs = ((actionEnd.tv_sec - actionStart.tv_sec) * 1000LL) +
     ((actionEnd.tv_usec - actionStart.tv_usec) / 1000LL);
   const std::string output = Util::ReadFile(outPath);
+  UpdateLastErrorHint(output);
   if (WIFEXITED(status) && (WEXITSTATUS(status) == 0))
   {
     LOG_DEBUG((p_AuthAction == Generate) ? "oauth2 generate ok (%lld ms)"

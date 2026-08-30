@@ -16,6 +16,7 @@
 #include <unistd.h>
 
 #include "addressbook.h"
+#include "auth.h"
 #include "flag.h"
 #include "loghelp.h"
 #include "maphelp.h"
@@ -4262,7 +4263,8 @@ void Ui::ResponseHandler(const ImapManager::Request& p_Request, const ImapManage
     }
     else if (p_Response.m_ResponseStatus & ImapManager::ResponseStatusLoginFailed)
     {
-      SetDialogMessage("Login failed", true /* p_Warn */);
+      const std::string hint = Auth::GetLastErrorHint();
+      SetDialogMessage("Login failed" + (hint.empty() ? "" : ": " + hint), true /* p_Warn */);
     }
   }
 

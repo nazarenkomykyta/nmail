@@ -31,6 +31,7 @@ public:
   static bool RefreshToken();
   static int64_t GetTimeToExpirySec();
   static bool HasExpiryTime();
+  static std::string GetLastErrorHint();
 
 private:
   enum AuthAction { Generate, Refresh };
@@ -47,6 +48,7 @@ private:
   static int64_t GetCurrentTimeSec();
   static void UpdateExpiryTime();
   static void LogTokenStoreMetadata();
+  static void UpdateLastErrorHint(const std::string& p_Output);
   static int PerformAction(const AuthAction p_AuthAction);
 
 private:
@@ -60,4 +62,5 @@ private:
 
   static std::string m_CustomClientId;
   static std::string m_CustomClientSecret;
+  static std::string m_LastErrorHint;
 };
